@@ -122,10 +122,9 @@ app.post('/api/export-csv', (req, res) => {
   }
 });
 
-if (!process.env.VERCEL) {
-  app.listen(PORT, () => {
-    console.log(`[SiteSift Server] Active at http://localhost:${PORT}`);
-  });
-}
+app.listen(PORT, () => {
+  console.log(`[SiteSift Server] Active at http://localhost:${PORT}`);
+});
 
 module.exports = app;
+
