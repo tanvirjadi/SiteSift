@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   AlertTriangle,
   Zap,
@@ -16,11 +16,8 @@ import ExecutiveSummary from './components/ExecutiveSummary';
 import BlueprintView from './components/BlueprintView';
 import TechnicalAudit from './components/TechnicalAudit';
 import CrawledPagesView from './components/CrawledPagesView';
-import SettingsModal from './components/SettingsModal';
 import { exportToCsv } from './utils/exportCsv';
 import './index.css';
-
-const DEFAULT_MODEL = 'google/gemini-2.5-flash';
 
 export default function App() {
   const [urlInput, setUrlInput] = useState('');
@@ -29,32 +26,7 @@ export default function App() {
   const [analysisData, setAnalysisData] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [activeTab, setActiveTab] = useState('weaknesses');
-  
-  const [showSettings, setShowSettings] = useState(false);
-  const [envKeyFound, setEnvKeyFound] = useState(false);
-  const [customApiKey, setCustomApiKey] = useState(() => localStorage.getItem('sitesift_openrouter_key') || '');
-  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('sitesift_model') || DEFAULT_MODEL);
   const [copiedSummary, setCopiedSummary] = useState(false);
-
-  useEffect(() => {
-    checkServerStatus();
-  }, []);
-
-  const checkServerStatus = async () => {
-    try {
-      const res = await fetch('/api/status');
-      if (res.ok) {
-        const data = await res.json();
-        setEnvKeyFound(Boolean(data.hasEnvKey));
-      }
-    } catch {}
-  };
-
-  const handleSaveSettings = () => {
-    localStorage.setItem('sitesift_openrouter_key', customApiKey.trim());
-    localStorage.setItem('sitesift_model', selectedModel);
-    setShowSettings(false);
-  };
 
   const handleAnalyze = async (overrideUrl) => {
     const rawUrl = (overrideUrl || urlInput || '').trim();
@@ -75,12 +47,9 @@ export default function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(customApiKey.trim() ? { 'x-openrouter-key': customApiKey.trim() } : {}),
         },
         body: JSON.stringify({
           url: rawUrl,
-          apiKey: customApiKey.trim() || undefined,
-          model: selectedModel,
         }),
       });
 
@@ -90,12 +59,7 @@ export default function App() {
       const data = await res.json();
 
       if (!res.ok) {
-        if (data.missingApiKey) {
-          setErrorMsg(data.error);
-          setShowSettings(true);
-        } else {
-          setErrorMsg(data.error || 'Failed to complete website audit.');
-        }
+        setErrorMsg(data.error || 'Failed to complete website audit.');
         setLoading(false);
         setActiveStep(0);
         return;
@@ -168,9 +132,6 @@ export default function App() {
   return (
     <div className="sitesift-app-shell">
       <Navbar
-        envKeyFound={envKeyFound}
-        customApiKey={customApiKey}
-        onOpenSettings={() => setShowSettings(true)}
         onLoadSample={handleLoadSample}
         loading={loading}
       />
@@ -284,17 +245,6 @@ export default function App() {
           )}
         </main>
       )}
-
-      <SettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        customApiKey={customApiKey}
-        setCustomApiKey={setCustomApiKey}
-        selectedModel={selectedModel}
-        setSelectedModel={setSelectedModel}
-        onSave={handleSaveSettings}
-        envKeyFound={envKeyFound}
-      />
     </div>
   );
 }

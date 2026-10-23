@@ -36,18 +36,17 @@ app.get('/api/sample', (req, res) => {
 
 app.post('/api/analyze', async (req, res) => {
   try {
-    const { url, apiKey: customKey, model, maxPages = 3 } = req.body;
+    const { url, maxPages = 3 } = req.body;
 
     if (!url || typeof url !== 'string' || !url.trim()) {
       return res.status(400).json({ error: 'Please provide a valid website URL to audit.' });
     }
 
-    const effectiveApiKey = (customKey || req.headers['x-openrouter-key'] || process.env.OPENROUTER_API_KEY || '').trim();
+    const apiKey = (process.env.OPENROUTER_API_KEY || '').trim();
 
-    if (!effectiveApiKey) {
-      return res.status(400).json({
-        error: 'No OpenRouter API key found. Enter your API key in the settings modal or set OPENROUTER_API_KEY in your Vercel Environment Variables.',
-        missingApiKey: true,
+    if (!apiKey) {
+      return res.status(500).json({
+        error: 'OPENROUTER_API_KEY is not configured on the server. Please add it to your .env or Vercel Environment Variables.',
       });
     }
 
@@ -66,8 +65,8 @@ app.post('/api/analyze', async (req, res) => {
     try {
       extractedBlueprint = await runExtractionAgent({
         crawlResult,
-        apiKey: effectiveApiKey,
-        model: model || process.env.OPENROUTER_MODEL,
+        apiKey,
+        model: process.env.OPENROUTER_MODEL,
       });
     } catch (agent1Err) {
       const detail = agent1Err.response?.data?.error?.message || agent1Err.message;
@@ -81,8 +80,8 @@ app.post('/api/analyze', async (req, res) => {
       auditResult = await runAuditorAgent({
         crawlResult,
         extractedBlueprint,
-        apiKey: effectiveApiKey,
-        model: model || process.env.OPENROUTER_MODEL,
+        apiKey,
+        model: process.env.OPENROUTER_MODEL,
       });
     } catch (agent2Err) {
       const detail = agent2Err.response?.data?.error?.message || agent2Err.message;
