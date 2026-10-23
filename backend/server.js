@@ -9,7 +9,9 @@ const cors = require('cors');
 const { crawlWebsite, normalizeUrl } = require('./crawler');
 const { runExtractionAgent } = require('./agentExtractor');
 const { runAuditorAgent } = require('./agentAuditor');
+const { fetchCoreWebVitals } = require('./coreWebVitals');
 const { generateSiteSiftCsv } = require('./csvExport');
+const { buildAuditPdfStream } = require('./pdfExport');
 const { sampleAnalysisData } = require('./sampleData');
 
 const app = express();
@@ -24,6 +26,7 @@ app.get('/api/status', (req, res) => {
   res.json({
     status: 'online',
     tool: 'SiteSift',
+    engine: 'Antigravity Zero-G Orchestrator v2.0',
     hasEnvKey,
     isVercel: Boolean(process.env.VERCEL),
     defaultModel: process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash',
@@ -34,6 +37,7 @@ app.get('/api/sample', (req, res) => {
   res.json(sampleAnalysisData);
 });
 
+// Primary Analysis Pipeline with Zero-G Protocol & Core Web Vitals
 app.post('/api/analyze', async (req, res) => {
   try {
     const { url, maxPages = 3 } = req.body;
@@ -46,21 +50,39 @@ app.post('/api/analyze', async (req, res) => {
 
     if (!apiKey) {
       return res.status(500).json({
-        error: 'OPENROUTER_API_KEY is not configured on the server. Please add it to your .env or Vercel Environment Variables.',
+        error: 'OPENROUTER_API_KEY is not configured on the server. Please add it to your .env file.',
       });
     }
 
     const normalizedUrl = normalizeUrl(url);
 
+    // 1. Zero-G Resilient Extraction Layer
     let crawlResult;
     try {
       crawlResult = await crawlWebsite(normalizedUrl, Math.min(Number(maxPages) || 3, 5));
     } catch (crawlErr) {
       return res.status(422).json({
-        error: `Could not crawl ${normalizedUrl}: ${crawlErr.message}. Verify that the site is live and reachable.`,
+        error: `Could not reach ${normalizedUrl}: ${crawlErr.message}. Verify that the site is live and reachable.`,
       });
     }
 
+    // Intercept Anti-Bot Challenge Wall with graceful diagnostic reporting
+    if (crawlResult.primaryPage?.blocked || crawlResult.crawl_meta?.status === 'blocked') {
+      return res.status(403).json({
+        status: 'restricted_access',
+        cause: 'anti_scraping_wall',
+        error: `Access to ${normalizedUrl} is protected by an anti-scraping firewall or Cloudflare challenge. Deep crawl aborted gracefully.`,
+        system_diagnostics: crawlResult.system_diagnostics || {
+          payload_size_kb: 0,
+          retries_attempted: 1,
+        },
+      });
+    }
+
+    // 2. Fetch Core Web Vitals in parallel with context preparation
+    const speedMetrics = await fetchCoreWebVitals(normalizedUrl);
+
+    // 3. Multi-Agent Extraction & Business Vertical Identification
     let extractedBlueprint;
     try {
       extractedBlueprint = await runExtractionAgent({
@@ -75,11 +97,13 @@ app.post('/api/analyze', async (req, res) => {
       });
     }
 
+    // 4. Multi-Agent Heuristic Auditing with 3-Tier Severity & Speed Data
     let auditResult;
     try {
       auditResult = await runAuditorAgent({
         crawlResult,
         extractedBlueprint,
+        speedMetrics,
         apiKey,
         model: process.env.OPENROUTER_MODEL,
       });
@@ -94,37 +118,68 @@ app.post('/api/analyze', async (req, res) => {
       targetUrl: crawlResult.primaryUrl,
       domain: crawlResult.domain,
       analyzedAt: new Date().toISOString(),
+      speedMetrics,
+      crawl_meta: crawlResult.crawl_meta || {
+        target_url: crawlResult.primaryUrl,
+        execution_time_ms: crawlResult.primaryPage?.responseTimeMs || 0,
+        status: 'success',
+      },
+      system_diagnostics: crawlResult.system_diagnostics || {
+        payload_size_kb: crawlResult.primaryPage?.system_diagnostics?.payload_size_kb || 0,
+        retries_attempted: 0,
+      },
       crawlResult,
       extractedBlueprint,
       auditResult,
     });
   } catch (err) {
-    res.status(500).json({ error: `Internal server error: ${err.message}` });
+    res.status(500).json({
+      error: `An unexpected orchestrator error occurred: ${err.message}`,
+    });
   }
 });
 
-app.post('/api/export-csv', (req, res) => {
+// PDF Export Endpoint
+app.post('/api/export/pdf', (req, res) => {
   try {
-    const analysisData = req.body;
-    if (!analysisData || !analysisData.crawlResult) {
-      return res.status(400).json({ error: 'Invalid analysis payload provided.' });
+    const auditData = req.body;
+    if (!auditData || !auditData.domain) {
+      return res.status(400).json({ error: 'Missing audit data payload for PDF generation.' });
     }
 
-    const csvContent = generateSiteSiftCsv(analysisData);
-    const domain = analysisData.crawlResult?.domain || 'audit-report';
-    const filename = `sitesift-${domain}-${Date.now()}.csv`;
+    const filename = `SiteSift-Audit-${auditData.domain.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
+    const pdfStream = buildAuditPdfStream(auditData);
+    pdfStream.pipe(res);
+  } catch (pdfErr) {
+    res.status(500).json({ error: `Failed to compile PDF: ${pdfErr.message}` });
+  }
+});
+
+// CSV Export Endpoint
+app.post('/api/export/csv', (req, res) => {
+  try {
+    const auditData = req.body;
+    if (!auditData || !auditData.domain) {
+      return res.status(400).json({ error: 'Missing audit data payload for CSV generation.' });
+    }
+
+    const csvContent = generateSiteSiftCsv(auditData);
+    const filename = `SiteSift-Audit-${auditData.domain.replace(/[^a-z0-9]/gi, '_')}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csvContent);
-  } catch (err) {
-    res.status(500).json({ error: `Failed to export CSV: ${err.message}` });
+  } catch (csvErr) {
+    res.status(500).json({ error: `Failed to compile CSV: ${csvErr.message}` });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`[SiteSift Server] Active at http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`[SiteSift Antigravity Orchestrator] API live on http://localhost:${PORT}`);
+  });
+}
 
 module.exports = app;
-

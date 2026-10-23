@@ -1,16 +1,20 @@
 import React from 'react';
-import { Download, Copy, Check, ExternalLink, AlertOctagon } from 'lucide-react';
+import { Download, Copy, Check, ExternalLink, AlertOctagon, FileText, Activity } from 'lucide-react';
 
 export default function OverviewBar({
   analysisData,
   onDownloadCsv,
+  onDownloadPdf,
   onCopySummary,
-  copiedSummary
+  copiedSummary,
+  isDownloadingPdf
 }) {
   const audit = analysisData?.auditResult || {};
   const score = audit.siteHealthScore ?? 70;
-  const criticalCount = (audit.weaknesses || []).filter((w) => w.severity?.toUpperCase() === 'CRITICAL').length;
+  const criticalCount = (audit.criticalFlaws || (audit.weaknesses || []).filter((w) => w.severity?.toUpperCase() === 'CRITICAL')).length;
   const risk = audit.revenueRiskLevel || 'Medium';
+  const vertical = analysisData?.extractedBlueprint?.vertical || 'General';
+  const speed = analysisData?.speedMetrics;
 
   const getScoreColor = (num) => {
     if (num >= 80) return '#10b981';
@@ -36,7 +40,7 @@ export default function OverviewBar({
         </div>
         <div className="score-meta">
           <span className="hud-kicker">CONVERSION HEALTH</span>
-          <span className="hud-desc">Composite CRO & UX Score</span>
+          <span className="hud-desc">Nielsen & CRO Composite</span>
         </div>
       </div>
 
@@ -59,26 +63,20 @@ export default function OverviewBar({
         <span className="hud-kicker">CRITICAL BOTTLENECKS</span>
         <div className="critical-metric-row">
           <span className="critical-number">{criticalCount}</span>
-          <span className="critical-total">/ {(audit.weaknesses || []).length} Total Issues</span>
+          <span className="critical-total">/ {(audit.weaknesses || []).length} Friction Points</span>
         </div>
-        <span className="hud-subdesc">Require Immediate Remedy</span>
+        <span className="hud-subdesc">Immediate Sales Blockers</span>
       </div>
 
       <div className="hud-data-divider" />
 
       <div className="hud-metric-column">
-        <span className="hud-kicker">AUDITED TARGET</span>
-        <a
-          href={analysisData.targetUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="target-link-row"
-        >
-          <span className="domain-text">{analysisData.domain}</span>
-          <ExternalLink size={13} />
-        </a>
+        <span className="hud-kicker">BUSINESS VERTICAL</span>
+        <div className="target-link-row">
+          <span className="domain-text" style={{ fontWeight: 600, color: '#38bdf8' }}>{vertical}</span>
+        </div>
         <span className="hud-subdesc">
-          {analysisData.crawlResult?.pagesCount || 1} pages • {analysisData.crawlResult?.primaryPage?.responseTimeMs || 300}ms
+          {speed?.performanceScore ? `Speed Score: ${speed.performanceScore}/100` : `${analysisData.domain}`}
         </span>
       </div>
 
@@ -86,9 +84,21 @@ export default function OverviewBar({
         <button
           type="button"
           className="btn-primary-action"
-          onClick={onDownloadCsv}
+          onClick={onDownloadPdf}
+          disabled={isDownloadingPdf}
+          title="Download branded client PDF audit report"
         >
-          <Download size={15} />
+          <FileText size={15} />
+          <span>{isDownloadingPdf ? 'Compiling PDF...' : 'Export PDF'}</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn-secondary-action"
+          onClick={onDownloadCsv}
+          title="Export CSV spreadsheet for outreach"
+        >
+          <Download size={14} />
           <span>Export CSV</span>
         </button>
 
@@ -96,9 +106,10 @@ export default function OverviewBar({
           type="button"
           className="btn-secondary-action"
           onClick={onCopySummary}
+          title="Copy executive brief to clipboard"
         >
           {copiedSummary ? <Check size={14} className="icon-success" /> : <Copy size={14} />}
-          <span>{copiedSummary ? 'Copied' : 'Copy Briefing'}</span>
+          <span>{copiedSummary ? 'Copied' : 'Briefing'}</span>
         </button>
       </div>
     </section>

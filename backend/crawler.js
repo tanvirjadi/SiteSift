@@ -2,102 +2,253 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const { URL } = require('url');
 
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 SiteSift/1.0';
+// Dynamic User-Agent Pool for Stealth & Anti-Bot Evasion
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 SiteSift/2.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 SiteSift/2.0',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0 SiteSift/2.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 SiteSift/2.0'
+];
+
+function getRandomUserAgent() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function normalizeUrl(rawUrl) {
-  let url = rawUrl.trim();
+  let url = (rawUrl || '').trim();
   if (!/^https?:\/\//i.test(url)) {
     url = 'https://' + url;
   }
   return url;
 }
 
-async function crawlSinglePage(targetUrl) {
-  const startTime = Date.now();
+/**
+ * Checks if a host domain is alive via a lightweight HEAD ping
+ */
+async function pingDomain(hostname) {
+  try {
+    await axios.head(`https://${hostname}`, {
+      timeout: 3500,
+      headers: { 'User-Agent': getRandomUserAgent() },
+      validateStatus: () => true,
+    });
+    return true;
+  } catch {
+    try {
+      await axios.head(`http://${hostname}`, {
+        timeout: 3500,
+        headers: { 'User-Agent': getRandomUserAgent() },
+        validateStatus: () => true,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/**
+ * Anti-Bot & Cloudflare wall detector
+ */
+function detectAntiBotWall(statusCode, html = '') {
+  if (statusCode === 403 || statusCode === 503) {
+    const lower = html.toLowerCase();
+    if (
+      lower.includes('cloudflare') ||
+      lower.includes('cf-browser-verification') ||
+      lower.includes('challenge-platform') ||
+      lower.includes('attention required') ||
+      lower.includes('ddos-guard') ||
+      lower.includes('akamai') ||
+      lower.includes('bot detection')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Resilient Zero-G fetcher with exponential backoff & connection error deflection
+ */
+async function fetchWithResilience(targetUrl, retries = 1) {
   const normalized = normalizeUrl(targetUrl);
-  const parsedUrl = new URL(normalized);
+  const parsed = new URL(normalized);
+  let attempt = 0;
+  let lastError = null;
 
-  const response = await axios.get(normalized, {
-    headers: {
-      'User-Agent': USER_AGENT,
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
-    timeout: 15000,
-    maxRedirects: 5,
-    validateStatus: (status) => status < 500,
-  });
+  while (attempt <= retries) {
+    const startTime = Date.now();
+    try {
+      const response = await axios.get(normalized, {
+        headers: {
+          'User-Agent': getRandomUserAgent(),
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache',
+        },
+        timeout: 14000,
+        maxRedirects: 5,
+        validateStatus: (status) => status < 600, // Capture 500s internally
+      });
 
-  const responseTimeMs = Date.now() - startTime;
-  const html = response.data;
-  if (typeof html !== 'string') {
-    throw new Error('Received non-HTML response from target website');
+      const responseTimeMs = Date.now() - startTime;
+      const html = typeof response.data === 'string' ? response.data : '';
+
+      // Check for Anti-Bot Challenge wall
+      if (detectAntiBotWall(response.status, html)) {
+        return {
+          status: 'blocked',
+          statusCode: response.status,
+          cause: 'anti_scraping_wall',
+          html,
+          responseTimeMs,
+          retriesAttempted: attempt,
+        };
+      }
+
+      // Check for 5xx Server Error - attempt retry
+      if (response.status >= 500) {
+        throw new Error(`Target server returned HTTP ${response.status}`);
+      }
+
+      return {
+        status: 'success',
+        statusCode: response.status,
+        html,
+        responseTimeMs,
+        retriesAttempted: attempt,
+      };
+    } catch (err) {
+      lastError = err;
+      attempt++;
+
+      if (attempt <= retries) {
+        // Delayed exponential backoff (1500ms * attempt)
+        await delay(1500 * attempt);
+      }
+    }
   }
 
-  const $ = cheerio.load(html);
+  // If retries exhausted, check if base domain is alive
+  const domainAlive = await pingDomain(parsed.hostname);
 
-  $('script, style, noscript, svg, iframe, canvas').remove();
+  return {
+    status: 'degraded',
+    statusCode: lastError.response?.status || 504,
+    cause: domainAlive ? 'page_unreachable_domain_alive' : 'domain_unreachable_or_dns_failed',
+    error: lastError.message,
+    html: typeof lastError.response?.data === 'string' ? lastError.response.data : '',
+    responseTimeMs: 0,
+    retriesAttempted: attempt - 1,
+  };
+}
 
-  const title = $('title').text().trim() || $('meta[property="og:title"]').attr('content') || '';
-  const description = $('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content') || '';
+/**
+ * Extracts and cleans structural nodes according to the Anti-Weight Framework
+ * Discards inline CSS, scripts, SVG paths, base64 images; budgets text under 50KB.
+ */
+function parseAndTriageHtml(html, normalizedUrl) {
+  const parsedUrl = new URL(normalizedUrl);
+  const $ = cheerio.load(html || '<html><head></head><body></body></html>');
+
+  // Discard Protocol: Strip out inline CSS scripts, SVG path definitions, heavy JS bundles, iframes
+  $('script, style, noscript, svg, iframe, canvas, link[rel="stylesheet"]').remove();
+
+  // 1. Metadata Extraction
+  const title = $('title').text().trim() || $('meta[property="og:title"]').attr('content') || 'Not Found';
+  const description = $('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content') || 'Not Found';
   const keywords = $('meta[name="keywords"]').attr('content') || '';
   const author = $('meta[name="author"]').attr('content') || '';
   const robots = $('meta[name="robots"]').attr('content') || '';
-  const canonical = $('link[rel="canonical"]').attr('href') || '';
+  const canonical = $('link[rel="canonical"]').attr('href') || 'Not Found';
   const viewport = $('meta[name="viewport"]').attr('content') || '';
   const charset = $('meta[charset]').attr('charset') || $('meta[http-equiv="Content-Type"]').attr('content') || 'utf-8';
-  const lang = $('html').attr('lang') || '';
+  const lang = $('html').attr('lang') || 'en';
 
   const ogData = {
-    title: $('meta[property="og:title"]').attr('content') || '',
-    description: $('meta[property="og:description"]').attr('content') || '',
+    title: $('meta[property="og:title"]').attr('content') || title,
+    description: $('meta[property="og:description"]').attr('content') || description,
     image: $('meta[property="og:image"]').attr('content') || '',
-    url: $('meta[property="og:url"]').attr('content') || '',
-    type: $('meta[property="og:type"]').attr('content') || '',
+    url: $('meta[property="og:url"]').attr('content') || normalizedUrl,
+    type: $('meta[property="og:type"]').attr('content') || 'website',
     siteName: $('meta[property="og:site_name"]').attr('content') || '',
   };
 
   const twitterData = {
     card: $('meta[name="twitter:card"]').attr('content') || '',
-    title: $('meta[name="twitter:title"]').attr('content') || '',
-    description: $('meta[name="twitter:description"]').attr('content') || '',
+    title: $('meta[name="twitter:title"]').attr('content') || title,
+    description: $('meta[name="twitter:description"]').attr('content') || description,
     image: $('meta[name="twitter:image"]').attr('content') || '',
   };
 
+  // 2. Document Headings (h1 through h6)
   const headings = {
     h1: [],
     h2: [],
     h3: [],
+    h4: [],
+    h5: [],
+    h6: [],
   };
-  $('h1').each((_, el) => {
-    const text = $(el).text().replace(/\s+/g, ' ').trim();
-    if (text) headings.h1.push(text);
-  });
-  $('h2').each((_, el) => {
-    const text = $(el).text().replace(/\s+/g, ' ').trim();
-    if (text) headings.h2.push(text);
-  });
-  $('h3').each((_, el) => {
-    const text = $(el).text().replace(/\s+/g, ' ').trim();
-    if (text) headings.h3.push(text);
+
+  ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].forEach((tag) => {
+    $(tag).each((_, el) => {
+      const text = $(el).text().replace(/\s+/g, ' ').trim();
+      if (text && text.length < 300) {
+        headings[tag].push(text);
+      }
+    });
   });
 
+  // 3. Primary CTAs (Buttons & links with action-oriented styling)
+  const ctas = [];
+  $('button, a.btn, a.button, a[class*="cta"], a[class*="btn"], input[type="submit"]').each((_, el) => {
+    const text = $(el).text().replace(/\s+/g, ' ').trim() || $(el).attr('value') || '';
+    if (text && text.length > 1 && text.length < 50 && !ctas.includes(text)) {
+      ctas.push(text);
+    }
+  });
+
+  // 4. Image Alt-Text Audit (Excludes heavy base64 embedded imagery)
   const images = [];
-  let missingAltCount = 0;
+  const imagesMissingAlt = [];
+  let totalImagesCount = 0;
+
   $('img').each((_, el) => {
     const src = $(el).attr('src') || $(el).attr('data-src') || '';
+    // Skip inline base64 to avoid context weight bloat
+    if (src.startsWith('data:image')) return;
+
+    totalImagesCount++;
     const alt = $(el).attr('alt');
     const isMissingAlt = alt === undefined || alt === null || alt.trim() === '';
-    if (isMissingAlt) missingAltCount++;
-    if (src && images.length < 25) {
+
+    let resolvedSrc = '';
+    try {
+      resolvedSrc = src.startsWith('http') ? src : (src ? new URL(src, normalizedUrl).href : '');
+    } catch {
+      resolvedSrc = src;
+    }
+
+    if (isMissingAlt) {
+      imagesMissingAlt.push({ src: resolvedSrc || 'unknown' });
+    }
+
+    if (resolvedSrc && images.length < 25) {
       images.push({
-        src: src.startsWith('http') ? src : new URL(src, normalized).href,
-        alt: alt || '',
+        src: resolvedSrc,
+        alt: alt || 'Not Found',
         missingAlt: isMissingAlt,
       });
     }
   });
 
+  // 5. Internal / External / Social / Contact Links
   const internalLinks = new Set();
   const externalLinks = new Set();
   const socialLinks = [];
@@ -119,9 +270,8 @@ async function crawlSinglePage(targetUrl) {
     }
 
     try {
-      const fullUrl = new URL(href, normalized);
-      const isInternal = fullUrl.hostname === parsedUrl.hostname;
-      if (isInternal) {
+      const fullUrl = new URL(href, normalizedUrl);
+      if (fullUrl.hostname === parsedUrl.hostname) {
         internalLinks.add(fullUrl.href);
       } else {
         externalLinks.add(fullUrl.href);
@@ -136,14 +286,7 @@ async function crawlSinglePage(targetUrl) {
     } catch {}
   });
 
-  const ctas = [];
-  $('button, a.btn, a.button, a[class*="cta"], a[class*="btn"], input[type="submit"]').each((_, el) => {
-    const text = $(el).text().replace(/\s+/g, ' ').trim() || $(el).attr('value') || '';
-    if (text && text.length < 50 && !ctas.includes(text)) {
-      ctas.push(text);
-    }
-  });
-
+  // 6. Forms audit
   const forms = [];
   $('form').each((_, el) => {
     const inputs = [];
@@ -158,18 +301,21 @@ async function crawlSinglePage(targetUrl) {
     });
   });
 
-  const bodyText = $('body')
+  // 7. Context Budgeting: Keep extracted text payload under 50KB per page
+  let bodyText = $('body')
     .text()
     .replace(/\s+/g, ' ')
     .trim();
+
+  const maxBytes = 48 * 1024; // 48KB threshold for safety under 50KB
+  if (Buffer.byteLength(bodyText, 'utf8') > maxBytes) {
+    bodyText = bodyText.slice(0, 24000);
+  }
+
   const wordCount = bodyText.split(/\s+/).filter(Boolean).length;
   const readingTimeMinutes = Math.max(1, Math.ceil(wordCount / 200));
 
   return {
-    url: normalized,
-    statusCode: response.status,
-    responseTimeMs,
-    isHttps: normalized.startsWith('https://'),
     metadata: {
       title,
       description,
@@ -184,62 +330,142 @@ async function crawlSinglePage(targetUrl) {
     openGraph: ogData,
     twitter: twitterData,
     headings,
+    ctas: ctas.slice(0, 15),
+    images: images.slice(0, 15),
+    imagesMissingAlt,
+    forms,
+    contactLinks,
+    socialLinks: socialLinks.slice(0, 10),
+    internalLinks: Array.from(internalLinks),
     metrics: {
       wordCount,
       readingTimeMinutes,
       h1Count: headings.h1.length,
       h2Count: headings.h2.length,
       h3Count: headings.h3.length,
-      totalImages: $('img').length,
-      missingAltCount,
+      totalImages: totalImagesCount,
+      missingAltCount: imagesMissingAlt.length,
       internalLinksCount: internalLinks.size,
       externalLinksCount: externalLinks.size,
       formsCount: forms.length,
       ctasCount: ctas.length,
     },
-    ctas: ctas.slice(0, 15),
-    forms,
-    contactLinks,
-    socialLinks: socialLinks.slice(0, 10),
-    images: images.slice(0, 15),
-    internalLinks: Array.from(internalLinks),
-    textContentSample: bodyText.slice(0, 6000),
-    fullTextLength: bodyText.length,
+    cleanTextSample: bodyText,
   };
 }
 
+/**
+ * Crawls a single page with full Zero-G Error Deflection & Anti-Weight Triage
+ */
+async function crawlSinglePage(targetUrl) {
+  const normalized = normalizeUrl(targetUrl);
+  const fetchResult = await fetchWithResilience(normalized, 1);
+
+  if (fetchResult.status === 'blocked') {
+    return {
+      url: normalized,
+      statusCode: fetchResult.statusCode,
+      responseTimeMs: fetchResult.responseTimeMs,
+      isHttps: normalized.startsWith('https://'),
+      blocked: true,
+      cause: 'anti_scraping_wall',
+      metadata: { title: 'Restricted Access', description: 'Anti-bot / Cloudflare wall encountered.' },
+      openGraph: {},
+      twitter: {},
+      headings: { h1: [], h2: [], h3: [], h4: [], h5: [], h6: [] },
+      metrics: { wordCount: 0, readingTimeMinutes: 0, h1Count: 0, h2Count: 0, h3Count: 0, totalImages: 0, missingAltCount: 0, internalLinksCount: 0, externalLinksCount: 0, formsCount: 0, ctasCount: 0 },
+      ctas: [],
+      forms: [],
+      contactLinks: { emails: [], phones: [] },
+      socialLinks: [],
+      images: [],
+      internalLinks: [],
+      textContentSample: '',
+      fullTextLength: 0,
+      system_diagnostics: {
+        payload_size_kb: 0,
+        retries_attempted: fetchResult.retriesAttempted,
+      },
+    };
+  }
+
+  const triaged = parseAndTriageHtml(fetchResult.html, normalized);
+  const payloadSizeKb = parseFloat((Buffer.byteLength(triaged.cleanTextSample, 'utf8') / 1024).toFixed(2));
+
+  return {
+    url: normalized,
+    statusCode: fetchResult.statusCode,
+    responseTimeMs: fetchResult.responseTimeMs,
+    isHttps: normalized.startsWith('https://'),
+    metadata: triaged.metadata,
+    openGraph: triaged.openGraph,
+    twitter: triaged.twitter,
+    headings: triaged.headings,
+    metrics: triaged.metrics,
+    ctas: triaged.ctas,
+    forms: triaged.forms,
+    contactLinks: triaged.contactLinks,
+    socialLinks: triaged.socialLinks,
+    images: triaged.images,
+    internalLinks: triaged.internalLinks,
+    textContentSample: triaged.cleanTextSample.slice(0, 6000),
+    fullTextLength: triaged.cleanTextSample.length,
+    system_diagnostics: {
+      payload_size_kb: payloadSizeKb,
+      retries_attempted: fetchResult.retriesAttempted,
+    },
+    // Standard Orchestration format
+    crawl_meta: {
+      target_url: normalized,
+      execution_time_ms: fetchResult.responseTimeMs,
+      status: fetchResult.status,
+    },
+    extracted_assets: {
+      headings: triaged.headings,
+      metadata: triaged.metadata,
+      ctas: triaged.ctas,
+      images_missing_alt: triaged.imagesMissingAlt,
+    },
+  };
+}
+
+/**
+ * Crawl website multi-page orchestrator
+ */
 async function crawlWebsite(targetUrl, maxPages = 3) {
   const mainPage = await crawlSinglePage(targetUrl);
   const crawledPages = [mainPage];
   const visitedUrls = new Set([mainPage.url]);
 
-  const priorityPatterns = ['/pricing', '/price', '/about', '/contact', '/services', '/features', '/faq'];
-  const candidateUrls = mainPage.internalLinks.filter((link) => {
-    try {
-      const path = new URL(link).pathname.toLowerCase();
-      return priorityPatterns.some((p) => path.includes(p)) && !visitedUrls.has(link);
-    } catch {
-      return false;
-    }
-  });
+  if (!mainPage.blocked && mainPage.internalLinks?.length > 0) {
+    const priorityPatterns = ['/pricing', '/price', '/about', '/contact', '/services', '/features', '/faq'];
+    const candidateUrls = mainPage.internalLinks.filter((link) => {
+      try {
+        const path = new URL(link).pathname.toLowerCase();
+        return priorityPatterns.some((p) => path.includes(p)) && !visitedUrls.has(link);
+      } catch {
+        return false;
+      }
+    });
 
-  for (const subUrl of candidateUrls.slice(0, maxPages - 1)) {
-    try {
-      visitedUrls.add(subUrl);
-      const subPage = await crawlSinglePage(subUrl);
-      crawledPages.push(subPage);
-    } catch {}
+    for (const subUrl of candidateUrls.slice(0, maxPages - 1)) {
+      try {
+        visitedUrls.add(subUrl);
+        const subPage = await crawlSinglePage(subUrl);
+        crawledPages.push(subPage);
+      } catch {}
+    }
   }
 
   const combinedContent = crawledPages.map((p, idx) => `
 --- PAGE ${idx + 1}: ${p.url} ---
-Title: ${p.metadata.title}
-Meta Description: ${p.metadata.description}
-H1 Headings: ${p.headings.h1.join(' | ') || 'None'}
-H2 Headings: ${p.headings.h2.slice(0, 6).join(' | ') || 'None'}
-CTAs: ${p.ctas.join(', ') || 'None'}
+Title: ${p.metadata?.title || 'Not Found'}
+Meta Description: ${p.metadata?.description || 'Not Found'}
+H1 Headings: ${p.headings?.h1?.join(' | ') || 'None'}
+H2 Headings: ${p.headings?.h2?.slice(0, 6).join(' | ') || 'None'}
+CTAs: ${p.ctas?.join(', ') || 'None'}
 Main Content:
-${p.textContentSample}
+${p.textContentSample || ''}
 `).join('\n\n');
 
   return {
@@ -250,6 +476,9 @@ ${p.textContentSample}
     crawledPages,
     combinedContent,
     primaryPage: mainPage,
+    crawl_meta: mainPage.crawl_meta,
+    extracted_assets: mainPage.extracted_assets,
+    system_diagnostics: mainPage.system_diagnostics,
   };
 }
 
@@ -257,4 +486,5 @@ module.exports = {
   normalizeUrl,
   crawlSinglePage,
   crawlWebsite,
+  parseAndTriageHtml,
 };

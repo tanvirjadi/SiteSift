@@ -1,131 +1,79 @@
-function escapeCsvCell(value) {
-  if (value === null || value === undefined) return '""';
-  const str = String(value);
-  if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return `"${str}"`;
-}
+/**
+ * Generates an executive, client-ready CSV spreadsheet audit
+ */
+function generateSiteSiftCsv(auditPayload) {
+  const { targetUrl, domain, analyzedAt, auditResult, extractedBlueprint, speedMetrics } = auditPayload;
 
-function formatRow(cells) {
-  return cells.map(escapeCsvCell).join(',');
-}
+  const escapeCsv = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
 
-function generateSiteSiftCsv(analysisData) {
-  const { crawlResult, extractedBlueprint, auditResult } = analysisData;
-  const primaryPage = crawlResult?.primaryPage || {};
-  const weaknesses = auditResult?.weaknesses || [];
-  const topWins = auditResult?.topQuickWins || [];
+  const rows = [];
+  rows.push(['SiteSift Professional CRO Audit Report']);
+  rows.push(['Domain', escapeCsv(domain)]);
+  rows.push(['Target URL', escapeCsv(targetUrl)]);
+  rows.push(['Audit Timestamp', escapeCsv(analyzedAt)]);
+  rows.push(['Business Vertical', escapeCsv(extractedBlueprint?.vertical || 'General Business')]);
+  rows.push(['Conversion Health Score', auditResult?.siteHealthScore || 'N/A']);
+  rows.push(['Revenue Risk Level', escapeCsv(auditResult?.revenueRiskLevel || 'Moderate')]);
+  rows.push(['PageSpeed Performance Score', speedMetrics?.performanceScore ? `${speedMetrics.performanceScore}/100` : 'Calibrated']);
+  rows.push(['LCP (Largest Contentful Paint)', escapeCsv(speedMetrics?.lcp || 'N/A')]);
+  rows.push(['CLS (Cumulative Layout Shift)', escapeCsv(speedMetrics?.cls || 'N/A')]);
+  rows.push(['Estimated Monthly Bounce Drag', escapeCsv(auditResult?.estimatedMonthlyBounceCost || 'N/A')]);
+  rows.push([]);
 
-  const lines = [];
+  // Executive Summary
+  rows.push(['--- EXECUTIVE BRIEFING ---']);
+  rows.push([escapeCsv(auditResult?.executiveSummary || '')]);
+  rows.push([]);
 
-  lines.push(formatRow(['SITESIFT AUDIT REPORT & WEBSITE REVENUE LEAK ANALYSIS']));
-  lines.push(formatRow(['Generated At', new Date().toISOString()]));
-  lines.push(formatRow(['Target URL', crawlResult?.primaryUrl || '']));
-  lines.push(formatRow(['Domain', crawlResult?.domain || '']));
-  lines.push(formatRow(['Site Health Score', `${auditResult?.siteHealthScore || 'N/A'}/100`]));
-  lines.push(formatRow(['Revenue Risk Level', auditResult?.revenueRiskLevel || 'N/A']));
-  lines.push(formatRow(['Estimated Bounce Cost', auditResult?.estimatedMonthlyBounceCost || 'N/A']));
-  lines.push(formatRow(['Executive Summary', auditResult?.executiveSummary || '']));
-  lines.push('');
+  // Top Quick Wins
+  rows.push(['--- TOP QUICK WINS ---']);
+  rows.push(['Title', 'Impact', 'Action Required']);
+  (auditResult?.topQuickWins || []).forEach((win) => {
+    rows.push([escapeCsv(win.title), escapeCsv(win.impact), escapeCsv(win.action)]);
+  });
+  rows.push([]);
 
-  lines.push(formatRow(['--- IDENTIFIED WEAKNESSES COSTING THE BUSINESS CUSTOMERS ---']));
-  lines.push(formatRow([
-    'ID',
-    'Category',
-    'Severity',
-    'Issue',
-    'Drop-Off Location',
-    'Customer Psychology & Revenue Cost',
-    'Recommended Actionable Fix',
-    'Effort Level'
-  ]));
+  // Critical Flaws
+  rows.push(['--- CRITICAL FLAWS (IMMEDIATE REVENUE LEAKS) ---']);
+  rows.push(['ID', 'Heuristic / Principle', 'Issue', 'Drop-Off Location', 'Conversion Impact', 'Actionable Fix', 'Effort']);
+  const criticals = auditResult?.criticalFlaws || (auditResult?.weaknesses || []).filter((w) => w.severity === 'Critical');
+  criticals.forEach((c) => {
+    rows.push([
+      escapeCsv(c.id),
+      escapeCsv(c.heuristic || c.category || 'Visual Hierarchy & Clarity'),
+      escapeCsv(c.issue),
+      escapeCsv(c.location || c.dropoffLocation),
+      escapeCsv(c.conversionImpact || c.customerCost),
+      escapeCsv(c.actionableFix),
+      escapeCsv(c.effort || 'Quick Win (<1h)')
+    ]);
+  });
+  rows.push([]);
 
-  weaknesses.forEach((w) => {
-    lines.push(formatRow([
-      w.id || '',
-      w.category || '',
-      w.severity || '',
-      w.issue || '',
-      w.dropoffLocation || '',
-      w.customerCost || '',
-      w.actionableFix || '',
-      w.effort || ''
-    ]));
+  // Optimization Opportunities
+  rows.push(['--- OPTIMIZATION OPPORTUNITIES ---']);
+  rows.push(['ID', 'Issue', 'Location', 'Projected Uplift', 'Actionable Fix', 'Effort']);
+  const optimizations = auditResult?.optimizationOpportunities || (auditResult?.weaknesses || []).filter((w) => w.severity !== 'Critical');
+  optimizations.forEach((opt) => {
+    rows.push([
+      escapeCsv(opt.id),
+      escapeCsv(opt.issue),
+      escapeCsv(opt.location || opt.dropoffLocation || 'General UX'),
+      escapeCsv(opt.conversionImpact || opt.customerCost || 'Secondary uplift'),
+      escapeCsv(opt.actionableFix),
+      escapeCsv(opt.effort || 'Moderate (1-3h)')
+    ]);
+  });
+  rows.push([]);
+
+  // Passed Elements / Strengths
+  rows.push(['--- PASSED ELEMENTS (STRENGTHS TO PRESERVE) ---']);
+  const passed = auditResult?.passedElements || auditResult?.strengths || [];
+  passed.forEach((item) => {
+    rows.push([escapeCsv(item)]);
   });
 
-  lines.push('');
-
-  lines.push(formatRow(['--- TOP PRIORITY QUICK WINS (HIGHEST LEVERAGE) ---']));
-  lines.push(formatRow(['#', 'Priority Fix', 'Expected Customer Impact', 'Action Required']));
-  topWins.forEach((win, idx) => {
-    lines.push(formatRow([
-      idx + 1,
-      win.title || '',
-      win.impact || '',
-      win.action || ''
-    ]));
-  });
-
-  lines.push('');
-
-  lines.push(formatRow(['--- EXTRACTED BUSINESS & CONTENT BLUEPRINT (AGENT 1) ---']));
-  lines.push(formatRow(['Business Name', extractedBlueprint?.businessName || '']));
-  lines.push(formatRow(['Tagline', extractedBlueprint?.tagline || '']));
-  lines.push(formatRow(['Value Proposition', extractedBlueprint?.valueProposition || '']));
-  lines.push(formatRow(['Target Audience', JSON.stringify(extractedBlueprint?.targetAudience || {})]));
-  lines.push(formatRow(['Primary Conversion Goal', extractedBlueprint?.primaryConversionGoal || '']));
-  lines.push(formatRow(['Core Offerings', (extractedBlueprint?.coreOfferings || []).join('; ')]));
-  lines.push(formatRow(['Pricing Model', extractedBlueprint?.pricingModel || '']));
-  lines.push(formatRow(['Trust Signals', (extractedBlueprint?.trustSignalsDetected || []).join('; ')]));
-  lines.push(formatRow(['Content Tone', extractedBlueprint?.contentToneAndClarity || '']));
-
-  lines.push('');
-
-  lines.push(formatRow(['--- TECHNICAL & SEO AUDIT SIGNALS ---']));
-  lines.push(formatRow([
-    'Page URL',
-    'HTTP Status',
-    'Response Time (ms)',
-    'HTTPS Secure',
-    'Page Title',
-    'Meta Description',
-    'Word Count',
-    'Reading Time (min)',
-    'H1 Count',
-    'H1 Headings',
-    'H2 Count',
-    'Total Images',
-    'Missing Alt Tags',
-    'Forms Found',
-    'Internal Links',
-    'External Links',
-    'CTAs Detected'
-  ]));
-
-  (crawlResult?.crawledPages || [primaryPage]).forEach((page) => {
-    lines.push(formatRow([
-      page.url || '',
-      page.statusCode || 200,
-      page.responseTimeMs || 0,
-      page.isHttps ? 'Yes' : 'No',
-      page.metadata?.title || '',
-      page.metadata?.description || '',
-      page.metrics?.wordCount || 0,
-      page.metrics?.readingTimeMinutes || 1,
-      page.metrics?.h1Count || 0,
-      (page.headings?.h1 || []).join(' | '),
-      page.metrics?.h2Count || 0,
-      page.metrics?.totalImages || 0,
-      page.metrics?.missingAltCount || 0,
-      page.metrics?.formsCount || 0,
-      page.metrics?.internalLinksCount || 0,
-      page.metrics?.externalLinksCount || 0,
-      (page.ctas || []).join('; ')
-    ]));
-  });
-
-  return lines.join('\r\n');
+  return rows.map((r) => r.join(',')).join('\n');
 }
 
 module.exports = {

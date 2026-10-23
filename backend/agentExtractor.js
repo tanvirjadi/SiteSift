@@ -10,12 +10,17 @@ async function runExtractionAgent({ crawlResult, apiKey, model = DEFAULT_MODEL }
   const { primaryUrl, domain, primaryPage, crawledPages, combinedContent } = crawlResult;
 
   const systemPrompt = `You are Agent 1 (Extraction & Structuring Agent) for SiteSift, a professional web audit and conversion intelligence system.
-Your job is to analyze raw website crawl data, metadata, headings, CTAs, forms, and page content, and distill it into a clean, comprehensive, structured business blueprint.
+Your job is to analyze the triaged website crawl data, structural nodes, headings, CTAs, forms, and page content, and distill it into a clean, comprehensive, structured business blueprint.
+
+ANTI-HALLUCINATION GUARDRAILS:
+1. If an element (such as a CTA, pricing tier, or image alt tag) is missing, do NOT invent placeholder data. Report it explicitly as "Not Found".
+2. Accurately classify the business vertical (e.g. B2B SaaS, E-Commerce / D2C, Local Service, Agency / Portfolio, or Content / Media) based on metadata and content signals.
 
 You MUST respond strictly with valid JSON without any markdown formatting or commentary outside the JSON.
 Your JSON must strictly match this structure:
 {
   "businessName": "Name of the business or product",
+  "vertical": "B2B SaaS" | "E-Commerce / D2C" | "Local Service" | "Agency / Portfolio" | "Content / Media",
   "tagline": "Short tagline or detected main slogan",
   "valueProposition": "Crisp 1-2 sentence description of their core value proposition and what problem they solve",
   "targetAudience": {
@@ -27,11 +32,11 @@ Your JSON must strictly match this structure:
     "Key service/product 2",
     "Key service/product 3"
   ],
-  "primaryConversionGoal": "The main action the website wants visitors to take (e.g., 'Book a Discovery Call', 'Start 14-day Free Trial', 'Purchase eCommerce product')",
+  "primaryConversionGoal": "The main action the website wants visitors to take (or 'Not Found' if ambiguous)",
   "ctaInventory": [
     { "text": "CTA button text", "context": "Above fold hero / Navigation / Footer" }
   ],
-  "pricingModel": "Disclosed Tiers / Custom Quote / Freemium / Hidden / Not Mentioned",
+  "pricingModel": "Disclosed Tiers / Custom Quote / Freemium / Hidden / Not Found",
   "trustSignalsDetected": [
     "Detected social proof (client logos, customer reviews, security badges, years in business, case studies)"
   ],
@@ -43,16 +48,16 @@ Your JSON must strictly match this structure:
 URL: ${primaryUrl}
 Domain: ${domain}
 Total Pages Crawled: ${crawledPages.length}
-Primary Title: ${primaryPage.metadata.title}
-Meta Description: ${primaryPage.metadata.description}
-Headings H1: ${JSON.stringify(primaryPage.headings.h1)}
-Headings H2: ${JSON.stringify(primaryPage.headings.h2.slice(0, 8))}
-Detected CTAs: ${JSON.stringify(primaryPage.ctas)}
-Contact Info: ${JSON.stringify(primaryPage.contactLinks)}
-Social Links: ${JSON.stringify(primaryPage.socialLinks)}
+Primary Title: ${primaryPage.metadata?.title || 'Not Found'}
+Meta Description: ${primaryPage.metadata?.description || 'Not Found'}
+Headings H1: ${JSON.stringify(primaryPage.headings?.h1 || [])}
+Headings H2: ${JSON.stringify(primaryPage.headings?.h2?.slice(0, 8) || [])}
+Detected CTAs: ${JSON.stringify(primaryPage.ctas || [])}
+Contact Info: ${JSON.stringify(primaryPage.contactLinks || {})}
+Social Links: ${JSON.stringify(primaryPage.socialLinks || [])}
 
-WEBSITE CONTENT TRANSCRIPT:
-${combinedContent.slice(0, 4500)}
+WEBSITE CONTENT TRANSCRIPT (BUDGETED UNDER 50KB):
+${(combinedContent || '').slice(0, 4500)}
 
 Extract the structured business and content blueprint now as strictly valid JSON.`;
 

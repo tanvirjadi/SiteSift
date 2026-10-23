@@ -1,14 +1,76 @@
 import React from 'react';
-import { Clock, Image as ImageIcon, Link2, ShieldAlert } from 'lucide-react';
+import { Clock, Image as ImageIcon, Link2, ShieldAlert, Zap, Activity, Cpu } from 'lucide-react';
 
-export default function TechnicalAudit({ primaryPage, targetUrl }) {
+export default function TechnicalAudit({ primaryPage, targetUrl, speedMetrics, systemDiagnostics }) {
   const page = primaryPage || {};
   const meta = page.metadata || {};
   const metrics = page.metrics || {};
   const headings = page.headings || { h1: [], h2: [] };
+  const speed = speedMetrics || {};
+  const diag = systemDiagnostics || page.system_diagnostics || {};
 
   return (
     <div className="technical-dossier-layout">
+      {/* Core Web Vitals & Technical Speed HUD */}
+      {speed.performanceScore !== undefined && (
+        <div className="dossier-card" style={{ marginBottom: 20, borderLeft: '3px solid #38bdf8' }}>
+          <div className="dossier-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="card-header-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Zap size={16} style={{ color: '#38bdf8' }} />
+              Google PageSpeed & Core Web Vitals Insights
+            </span>
+            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+              {speed.source || 'Performance Engine'}
+            </span>
+          </div>
+
+          <div className="tech-stat-strip" style={{ marginTop: 14 }}>
+            <div className="stat-strip-box">
+              <div className="stat-box-icon" style={{ background: speed.performanceScore >= 80 ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)' }}>
+                <Activity size={16} color={speed.performanceScore >= 80 ? '#10b981' : '#f59e0b'} />
+              </div>
+              <div className="stat-box-data">
+                <span className="stat-num" style={{ color: speed.performanceScore >= 80 ? '#10b981' : '#f59e0b' }}>
+                  {speed.performanceScore}/100
+                </span>
+                <span className="stat-desc">PageSpeed Score ({speed.grade || 'Calibrated'})</span>
+              </div>
+            </div>
+
+            <div className="stat-strip-box">
+              <div className="stat-box-icon">
+                <Clock size={16} />
+              </div>
+              <div className="stat-box-data">
+                <span className="stat-num">{speed.lcp || 'N/A'}</span>
+                <span className="stat-desc">LCP (Contentful Paint)</span>
+              </div>
+            </div>
+
+            <div className="stat-strip-box">
+              <div className="stat-box-icon">
+                <Cpu size={16} />
+              </div>
+              <div className="stat-box-data">
+                <span className="stat-num">{speed.cls || '0.00'}</span>
+                <span className="stat-desc">CLS (Layout Shift)</span>
+              </div>
+            </div>
+
+            <div className="stat-strip-box">
+              <div className="stat-box-icon">
+                <Zap size={16} />
+              </div>
+              <div className="stat-box-data">
+                <span className="stat-num">{speed.fcp || 'N/A'}</span>
+                <span className="stat-desc">FCP (First Paint)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Zero-G Pipeline & Page Metrics Strip */}
       <div className="tech-stat-strip">
         <div className="stat-strip-box">
           <div className="stat-box-icon">
@@ -48,8 +110,12 @@ export default function TechnicalAudit({ primaryPage, targetUrl }) {
             <ShieldAlert size={16} />
           </div>
           <div className="stat-box-data">
-            <span className="stat-num">{headings.h1?.length || 0}</span>
-            <span className="stat-desc">H1 Tag Count</span>
+            <span className="stat-num">
+              {diag.payload_size_kb ? `${diag.payload_size_kb} KB` : `${headings.h1?.length || 0} H1`}
+            </span>
+            <span className="stat-desc">
+              {diag.payload_size_kb ? 'Clean Context Budget' : 'H1 Tag Count'}
+            </span>
           </div>
         </div>
       </div>

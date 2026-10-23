@@ -2,11 +2,40 @@ const sampleAnalysisData = {
   targetUrl: 'https://example-saas-platform.com',
   domain: 'example-saas-platform.com',
   analyzedAt: new Date().toISOString(),
+  speedMetrics: {
+    status: 'success',
+    source: 'Google PageSpeed Insights',
+    performanceScore: 84,
+    lcp: '1.9 s',
+    cls: '0.02',
+    fcp: '1.1 s',
+    speedIndex: '2.1 s',
+    totalBlockingTime: '120 ms',
+    grade: 'Good'
+  },
+  crawl_meta: {
+    target_url: 'https://example-saas-platform.com',
+    execution_time_ms: 342,
+    status: 'success'
+  },
+  system_diagnostics: {
+    payload_size_kb: 14.2,
+    retries_attempted: 0
+  },
   crawlResult: {
     primaryUrl: 'https://example-saas-platform.com',
     domain: 'example-saas-platform.com',
     crawledAt: new Date().toISOString(),
     pagesCount: 3,
+    crawl_meta: {
+      target_url: 'https://example-saas-platform.com',
+      execution_time_ms: 342,
+      status: 'success'
+    },
+    system_diagnostics: {
+      payload_size_kb: 14.2,
+      retries_attempted: 0
+    },
     primaryPage: {
       url: 'https://example-saas-platform.com',
       statusCode: 200,
@@ -52,6 +81,9 @@ const sampleAnalysisData = {
           'Role-Based Access Control',
           'SOC-2 Type II Certified'
         ],
+        h4: [],
+        h5: [],
+        h6: []
       },
       metrics: {
         wordCount: 1420,
@@ -151,6 +183,7 @@ const sampleAnalysisData = {
   },
   extractedBlueprint: {
     businessName: 'DataPulse Analytics',
+    vertical: 'B2B SaaS',
     tagline: 'Transform raw data into profitable decisions without writing SQL',
     valueProposition: 'DataPulse provides an intuitive, no-code business intelligence platform that connects disparate company databases into real-time visual executive dashboards.',
     targetAudience: {
@@ -200,6 +233,44 @@ const sampleAnalysisData = {
         title: 'Objection-Busting FAQ directly on Pricing Table',
         impact: 'Plugs 15-20% bounce rate from users hesitating over data privacy and migration effort.',
         action: 'Add a collapsible 4-question FAQ addressing SOC-2 security, connector speed, and contract flexibility.'
+      }
+    ],
+    criticalFlaws: [
+      {
+        id: 'CRIT-01',
+        heuristic: 'Flexibility and efficiency of use / Friction reduction',
+        issue: 'Premature 4-Field Signup Form Causes 40%+ Trial Abandonment',
+        location: 'Above-the-fold Hero & Trial Modal',
+        conversionImpact: 'Visitors interested in seeing the product are immediately greeted with form fields asking for company size and password before experiencing any product magic. This friction causes high-intent visitors to bounce.',
+        actionableFix: 'Implement 1-click "Continue with Google" auth or ask for Work Email only on step 1.',
+        effort: 'Quick Win (<1h)'
+      },
+      {
+        id: 'CRIT-02',
+        heuristic: 'Recognition rather than recall / Social proof proof points',
+        issue: 'Social Proof Is Buried Below 3 Full Screens of Scroll',
+        location: 'Hero Section / First Screen',
+        conversionImpact: 'Only ~30% of web visitors scroll past the first screen. Because client logos are located near the bottom, 70% of potential buyers never see evidence that other businesses trust your software.',
+        actionableFix: 'Move a concise social proof bar ("Trusted by 2,400+ teams at [Logo 1] [Logo 2] [Logo 3]") directly underneath the Hero headline.',
+        effort: 'Quick Win (<1h)'
+      }
+    ],
+    optimizationOpportunities: [
+      {
+        id: 'OPT-01',
+        issue: 'Ambiguous Row & Sync Limits on the $49/mo Starter Plan',
+        location: 'Pricing Page (/pricing)',
+        conversionImpact: 'Prospects evaluating Starter vs Pro plan cannot tell how many rows of data are included, creating buying hesitation.',
+        actionableFix: 'Add explicit limits ("Up to 500k rows/mo • 1-hour sync intervals • 3 seats") with tooltip assistance.',
+        effort: 'Moderate (1-2 days)'
+      },
+      {
+        id: 'OPT-02',
+        issue: '4 Images Missing Descriptive Alt Tags',
+        location: 'Feature Grid',
+        conversionImpact: 'Hurts accessibility and organic image search indexability.',
+        actionableFix: 'Add semantic alt attributes describing dashboard charts.',
+        effort: 'Quick Win (<1h)'
       }
     ],
     weaknesses: [
@@ -265,6 +336,12 @@ const sampleAnalysisData = {
       }
     ],
     strengths: [
+      'Sub-400ms server response time provides snappy initial page load feel',
+      'Valid HTTPS and responsive viewport configuration across devices',
+      'Clean single H1 tag hierarchy on the landing page',
+      'Clear, readable typography with strong contrast ratios'
+    ],
+    passedElements: [
       'Sub-400ms server response time provides snappy initial page load feel',
       'Valid HTTPS and responsive viewport configuration across devices',
       'Clean single H1 tag hierarchy on the landing page',

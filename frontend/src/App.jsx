@@ -27,6 +27,7 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState('');
   const [activeTab, setActiveTab] = useState('weaknesses');
   const [copiedSummary, setCopiedSummary] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   const handleAnalyze = async (overrideUrl) => {
     const rawUrl = (overrideUrl || urlInput || '').trim();
@@ -56,7 +57,16 @@ export default function App() {
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);
 
-      const data = await res.json();
+      const contentType = res.headers.get('content-type') || '';
+      let data;
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const rawText = await res.text();
+        throw new Error(
+          rawText.slice(0, 150) || 'Backend server is offline or returned an empty response. Verify backend is running on port 5000.'
+        );
+      }
 
       if (!res.ok) {
         setErrorMsg(data.error || 'Failed to complete website audit.');
@@ -74,7 +84,7 @@ export default function App() {
     } catch (err) {
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);
-      setErrorMsg(`Connection error: ${err.message}.`);
+      setErrorMsg(`Connection error: ${err.message}`);
       setLoading(false);
       setActiveStep(0);
     }
@@ -86,7 +96,15 @@ export default function App() {
     setActiveStep(1);
     try {
       const res = await fetch('/api/sample');
-      const data = await res.json();
+      const contentType = res.headers.get('content-type') || '';
+      let data;
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const rawText = await res.text();
+        throw new Error(rawText || 'Failed to load sample data.');
+      }
+
       setTimeout(() => {
         setAnalysisData(data);
         setUrlInput(data.targetUrl);
@@ -94,7 +112,7 @@ export default function App() {
         setActiveStep(0);
       }, 600);
     } catch (err) {
-      setErrorMsg('Failed to load sample preview.');
+      setErrorMsg(`Failed to load sample preview: ${err.message}`);
       setLoading(false);
       setActiveStep(0);
     }
@@ -112,6 +130,37 @@ export default function App() {
   const handleDownloadCsv = () => {
     if (!analysisData) return;
     exportToCsv(analysisData);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!analysisData) return;
+    setIsDownloadingPdf(true);
+    try {
+      const res = await fetch('/api/export/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(analysisData),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to compile audit PDF');
+      }
+
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `SiteSift-Audit-${(analysisData.domain || 'report').replace(/[^a-z0-9]/gi, '_')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      alert(`PDF download notice: ${err.message}`);
+    } finally {
+      setIsDownloadingPdf(false);
+    }
   };
 
   const handleCopySummary = () => {
@@ -163,8 +212,10 @@ export default function App() {
           <OverviewBar
             analysisData={analysisData}
             onDownloadCsv={handleDownloadCsv}
+            onDownloadPdf={handleDownloadPdf}
             onCopySummary={handleCopySummary}
             copiedSummary={copiedSummary}
+            isDownloadingPdf={isDownloadingPdf}
           />
 
           <nav className="dossier-tab-navigation">
@@ -235,6 +286,8 @@ export default function App() {
             <TechnicalAudit
               primaryPage={analysisData.crawlResult?.primaryPage}
               targetUrl={analysisData.targetUrl}
+              speedMetrics={analysisData.speedMetrics}
+              systemDiagnostics={analysisData.system_diagnostics}
             />
           )}
 

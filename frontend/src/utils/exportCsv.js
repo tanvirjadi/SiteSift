@@ -4,6 +4,7 @@ export function exportToCsv(analysisData) {
   const primaryPage = analysisData.crawlResult?.primaryPage || {};
   const audit = analysisData.auditResult || {};
   const blueprint = analysisData.extractedBlueprint || {};
+  const speed = analysisData.speedMetrics || {};
   const weaknesses = audit.weaknesses || [];
   const topWins = audit.topQuickWins || [];
 
@@ -17,23 +18,29 @@ export function exportToCsv(analysisData) {
   };
 
   const rows = [];
-  rows.push(['SITESIFT AUDIT REPORT']);
+  rows.push(['SITESIFT CONVERSION AUDIT REPORT']);
   rows.push(['Generated At', new Date().toISOString()]);
   rows.push(['Target URL', analysisData.targetUrl || '']);
   rows.push(['Domain', analysisData.domain || '']);
-  rows.push(['Site Health Score', `${audit.siteHealthScore || 'N/A'}/100`]);
+  rows.push(['Business Vertical', blueprint.vertical || 'General Business']);
+  rows.push(['Conversion Health Score', `${audit.siteHealthScore || 'N/A'}/100`]);
   rows.push(['Revenue Risk Level', audit.revenueRiskLevel || 'N/A']);
+  rows.push(['Core Web Vitals Score', speed.performanceScore ? `${speed.performanceScore}/100 (${speed.grade || 'Calibrated'})` : 'Calibrated']);
+  rows.push(['LCP (Largest Contentful Paint)', speed.lcp || 'N/A']);
+  rows.push(['CLS (Cumulative Layout Shift)', speed.cls || 'N/A']);
   rows.push(['Estimated Bounce Cost', audit.estimatedMonthlyBounceCost || 'N/A']);
   rows.push(['Executive Summary', audit.executiveSummary || '']);
   rows.push([]);
 
-  rows.push(['--- CUSTOMER WEAKNESSES ---']);
+  // Critical Flaws
+  rows.push(['--- CRITICAL FLAWS & REVENUE LEAKS ---']);
   rows.push(['ID', 'Category', 'Severity', 'Issue', 'Drop-Off Location', 'Customer Drop-off Cost', 'Actionable Fix', 'Effort']);
   weaknesses.forEach((w) => {
     rows.push([w.id, w.category, w.severity, w.issue, w.dropoffLocation, w.customerCost, w.actionableFix, w.effort]);
   });
   rows.push([]);
 
+  // Priority Quick Wins
   rows.push(['--- PRIORITY QUICK WINS ---']);
   rows.push(['#', 'Title', 'Impact', 'Action Required']);
   topWins.forEach((win, idx) => {
@@ -41,14 +48,17 @@ export function exportToCsv(analysisData) {
   });
   rows.push([]);
 
-  rows.push(['--- AGENT 1 EXTRACTED BLUEPRINT ---']);
+  // Extracted Blueprint
+  rows.push(['--- BUSINESS BLUEPRINT ---']);
   rows.push(['Business Name', blueprint.businessName || '']);
+  rows.push(['Business Vertical', blueprint.vertical || '']);
   rows.push(['Value Proposition', blueprint.valueProposition || '']);
   rows.push(['Primary Conversion Goal', blueprint.primaryConversionGoal || '']);
   rows.push(['Core Offerings', (blueprint.coreOfferings || []).join('; ')]);
   rows.push(['Pricing Model', blueprint.pricingModel || '']);
   rows.push([]);
 
+  // Technical & SEO Signals
   rows.push(['--- TECHNICAL & SEO SIGNALS ---']);
   rows.push(['Page Title', primaryPage.metadata?.title || '']);
   rows.push(['Meta Description', primaryPage.metadata?.description || '']);
